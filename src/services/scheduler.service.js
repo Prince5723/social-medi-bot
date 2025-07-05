@@ -18,14 +18,12 @@ const redisConfig = process.env.REDIS_URL || {
 
 // Create queues for different platforms
 const twitterQueue = new Queue('twitter-posts', redisConfig);
-const instagramQueue = new Queue('instagram-posts', redisConfig);
 const linkedinQueue = new Queue('linkedin-posts', redisConfig);
 const reportQueue = new Queue('report-generation', redisConfig);
 
 // Platform queue mapping
 const platformQueues = {
   twitter: twitterQueue,
-  instagram: instagramQueue,
   linkedin: linkedinQueue
 };
 
@@ -44,18 +42,6 @@ class SchedulerService {
         return await this.processScheduledPost(scheduleId, 'twitter');
       } catch (error) {
         logger.error('Twitter queue processing error:', error);
-        throw error;
-      }
-    });
-
-    // Process Instagram posts
-    instagramQueue.process('process-post', async (job) => {
-      try {
-        const { scheduleId } = job.data;
-        logger.info(`Processing Instagram post for schedule: ${scheduleId}`);
-        return await this.processScheduledPost(scheduleId, 'instagram');
-      } catch (error) {
-        logger.error('Instagram queue processing error:', error);
         throw error;
       }
     });
@@ -87,10 +73,10 @@ class SchedulerService {
 
   setupQueueEventHandlers() {
     // Handle queue events
-    const queues = [twitterQueue, instagramQueue, linkedinQueue, reportQueue];
+    const queues = [twitterQueue, linkedinQueue, reportQueue];
     
     queues.forEach((queue, index) => {
-      const queueNames = ['Twitter', 'Instagram', 'LinkedIn', 'Report'];
+      const queueNames = ['Twitter', 'LinkedIn', 'Report'];
       const queueName = queueNames[index];
       
       queue.on('ready', () => {
@@ -350,7 +336,6 @@ class SchedulerService {
     logger.info('Shutting down scheduler service...');
     await Promise.all([
       twitterQueue.close(),
-      instagramQueue.close(),
       linkedinQueue.close(),
       reportQueue.close()
     ]);

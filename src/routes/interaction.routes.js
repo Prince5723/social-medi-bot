@@ -9,7 +9,7 @@ const router = express.Router();
 // Validation schemas
 const createInteractionSchema = z.object({
   body: z.object({
-    platform: z.enum(['twitter', 'instagram', 'linkedin']),
+    platform: z.enum(['twitter',  'linkedin']),
     action: z.enum(['like', 'comment', 'follow', 'retweet', 'share']),
     targetUser: z.object({
       userId: z.string(),

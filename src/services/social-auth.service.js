@@ -11,13 +11,6 @@ class SocialAuthService {
       redirectUri: process.env.TWITTER_REDIRECT_URI
     };
 
-    // Instagram OAuth 2.0
-    this.instagramConfig = {
-      clientId: process.env.INSTAGRAM_CLIENT_ID,
-      clientSecret: process.env.INSTAGRAM_CLIENT_SECRET,
-      redirectUri: process.env.INSTAGRAM_REDIRECT_URI
-    };
-
     // LinkedIn OAuth 2.0
     this.linkedinConfig = {
       clientId: process.env.LINKEDIN_CLIENT_ID,
@@ -182,81 +175,6 @@ class SocialAuthService {
     }
   }
 
-  // Instagram OAuth 2.0 Implementation
-  async getInstagramAuthUrl(callbackUrl) {
-    try {
-      if (!callbackUrl) {
-        throw new Error('Callback URL is required');
-      }
-
-      const state = crypto.randomBytes(16).toString('hex');
-      const params = new URLSearchParams({
-        client_id: this.instagramConfig.clientId,
-        redirect_uri: callbackUrl,
-        scope: 'user_profile,user_media',
-        response_type: 'code',
-        state: state
-      });
-
-      return {
-        url: `https://api.instagram.com/oauth/authorize?${params.toString()}`,
-        state: state
-      };
-    } catch (error) {
-      logger.error('Instagram auth URL generation error:', error);
-      throw new Error('Failed to generate Instagram auth URL');
-    }
-  }
-
-  async completeInstagramAuth(code, callbackUrl) {
-    try {
-      if (!code) {
-        throw new Error('Authorization code is required');
-      }
-
-      // Exchange code for access token
-      const tokenData = new URLSearchParams({
-        client_id: this.instagramConfig.clientId,
-        client_secret: this.instagramConfig.clientSecret,
-        grant_type: 'authorization_code',
-        redirect_uri: callbackUrl || this.instagramConfig.redirectUri,
-        code
-      });
-
-      const tokenResponse = await axios.post('https://api.instagram.com/oauth/access_token', tokenData, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      });
-
-      if (tokenResponse.status !== 200) {
-        throw new Error(`Instagram API returned status ${tokenResponse.status}`);
-      }
-
-      const { access_token, user_id } = tokenResponse.data;
-
-      // Get user info
-      const userResponse = await axios.get(`https://graph.instagram.com/me?fields=id,username,account_type&access_token=${access_token}`);
-
-      return {
-        accessToken: access_token,
-        refreshToken: null, // Instagram doesn't provide refresh tokens in basic flow
-        userId: user_id,
-        username: userResponse.data.username,
-        accountType: userResponse.data.account_type
-      };
-    } catch (error) {
-      if (error.response) {
-        console.error('Instagram auth completion error:', {
-          status: error.response.status,
-          data: error.response.data
-        });
-      }
-      logger.error('Instagram auth completion error:', error);
-      throw new Error(`Failed to complete Instagram authentication: ${error.message}`);
-    }
-  }
-
   // LinkedIn OAuth 2.0 Implementation
   async getLinkedInAuthUrl(callbackUrl) {
     try {
@@ -388,10 +306,6 @@ class SocialAuthService {
     }
   }
 
-  async refreshInstagramToken(refreshToken) {
-    // Instagram basic display API doesn't provide refresh tokens
-    throw new Error('Instagram basic display API does not support refresh tokens');
-  }
 
   async refreshLinkedInToken(refreshToken) {
     try {

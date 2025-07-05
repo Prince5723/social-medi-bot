@@ -17,10 +17,6 @@ const initiateAuthSchema = z.object({
 router.post('/twitter/initiate', auth, validate(initiateAuthSchema), socialAuthController.initiateTwitterAuth);
 router.get('/twitter/callback', socialAuthController.twitterCallback);
 
-// Instagram OAuth routes
-router.post('/instagram/initiate', auth, validate(initiateAuthSchema), socialAuthController.initiateInstagramAuth);
-router.get('/instagram/callback/:userId', socialAuthController.instagramCallback);
-
 // LinkedIn OAuth routes
 router.post('/linkedin/initiate', auth, validate(initiateAuthSchema), socialAuthController.initiateLinkedInAuth);
 router.get('/linkedin/callback', socialAuthController.linkedinCallback);

@@ -9,7 +9,7 @@ const router = express.Router();
 // Validation schemas
 const createCustomTrendSchema = z.object({
   body: z.object({
-    platform: z.enum(['twitter', 'instagram', 'linkedin', 'global']),
+    platform: z.enum(['twitter', 'linkedin', 'global']),
     trendType: z.enum(['hashtag', 'topic', 'keyword', 'user']),
     value: z.string().min(1),
     displayName: z.string().min(1),

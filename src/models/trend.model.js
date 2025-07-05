@@ -4,7 +4,7 @@ const trendSchema = new mongoose.Schema({
   platform: {
     type: String,
     required: true,
-    enum: ['twitter', 'instagram', 'linkedin', 'global']
+    enum: ['twitter',  'linkedin', 'global']
   },
   trendType: {
     type: String,

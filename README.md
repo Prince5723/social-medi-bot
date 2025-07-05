@@ -4,7 +4,7 @@ A production-ready Node.js backend for social media automation with scheduled po
 
 ## Features
 
-- **Scheduled Posting**: Schedule posts across Twitter, Instagram, and LinkedIn
+- **Scheduled Posting**: Schedule posts across Twitter, and LinkedIn
 - **User Interaction Automation**: Automated likes, comments, and follows based on rules
 - **Data Scraping**: Collect public data from social media platforms
 - **Trend Monitoring**: Monitor trending hashtags and topics in real-time
@@ -22,7 +22,7 @@ A production-ready Node.js backend for social media automation with scheduled po
 - **Database**: MongoDB with Mongoose ODM
 - **Queue System**: Bull with Redis
 - **Authentication**: JWT
-- **OAuth**: OAuth 1.0a (Twitter), OAuth 2.0 (Instagram, LinkedIn)
+- **OAuth**: OAuth 2.0 (Twitter, LinkedIn)
 - **Validation**: Zod
 - **Logging**: Winston
 - **Documentation**: Swagger/OpenAPI
@@ -32,7 +32,7 @@ A production-ready Node.js backend for social media automation with scheduled po
 - Node.js (v16 or higher)
 - MongoDB
 - Redis (for job queues)
-- Social Media API credentials (Twitter, Instagram, LinkedIn)
+- Social Media API credentials (Twitter, LinkedIn)
 
 ## Installation
 
@@ -58,10 +58,6 @@ A production-ready Node.js backend for social media automation with scheduled po
    TWITTER_API_KEY=your_twitter_api_key
    TWITTER_API_SECRET=your_twitter_api_secret
    
-   # Instagram API (OAuth 2.0)
-   INSTAGRAM_CLIENT_ID=your_instagram_client_id
-   INSTAGRAM_CLIENT_SECRET=your_instagram_client_secret
-   INSTAGRAM_REDIRECT_URI=https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/callback
    
    # LinkedIn API (OAuth 2.0)
    LINKEDIN_CLIENT_ID=your_linkedin_client_id
@@ -105,17 +101,6 @@ curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"callbackUrl":"https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/twitter/callback/YOUR_USER_ID"}'
-
-# Copy the 'authUrl' from the response and open it in your browser to authorize.
-```
-
-### 3. Connect Instagram Account
-```bash
-# Initiate Instagram OAuth
-curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/initiate \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"callbackUrl":"https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/callback/YOUR_USER_ID"}'
 
 # Copy the 'authUrl' from the response and open it in your browser to authorize.
 ```
@@ -195,20 +180,6 @@ curl -X PUT https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/
 - **Callback:**
   ```
   GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/twitter/callback/YOUR_USER_ID?oauth_token=...&oauth_verifier=...
-  ```
-
-#### Instagram
-- **Initiate:**
-  ```bash
-  curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/initiate \
-    -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d '{"callbackUrl":"https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/callback/YOUR_USER_ID"}'
-  # Copy the 'authUrl' from the response and open it in your browser to authorize.
-  ```
-- **Callback:**
-  ```
-  GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/callback/YOUR_USER_ID?code=...
   ```
 
 #### LinkedIn
@@ -428,7 +399,7 @@ src/
 │   ├── social-auth.service.js
 │   └── social/      # Social media platform services
 │       ├── twitter.service.js
-│       ├── instagram.service.js
+│      
 │       └── linkedin.service.js
 ├── utils/           # Utility functions
 │   └── jwt.js
@@ -440,15 +411,11 @@ src/
 
 The application includes OAuth flows for connecting social media accounts:
 
-### Twitter (OAuth 1.0a)
+### Twitter (OAuth 2.0a)
 - Uses OAuth 1.0a for authentication
 - Stores access token and secret
 - No refresh token support
 
-### Instagram (OAuth 2.0)
-- Uses OAuth 2.0 for authentication
-- Basic Display API
-- No refresh token in basic flow
 
 ### LinkedIn (OAuth 2.0)
 - Uses OAuth 2.0 for authentication
@@ -485,9 +452,6 @@ PORT=10000
 # Social Media API Keys
 TWITTER_API_KEY=your_twitter_api_key
 TWITTER_API_SECRET=your_twitter_api_secret
-INSTAGRAM_CLIENT_ID=your_instagram_client_id
-INSTAGRAM_CLIENT_SECRET=your_instagram_client_secret
-INSTAGRAM_REDIRECT_URI=https://yourdomain.com/api/social-auth/instagram/callback
 LINKEDIN_CLIENT_ID=your_linkedin_client_id
 LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
 LINKEDIN_REDIRECT_URI=https://yourdomain.com/api/social-auth/linkedin/callback

@@ -1,25 +1,15 @@
 const axios = require('axios');
-const OAuth = require('oauth-1.0a');
-const crypto = require('crypto');
 const User = require('../../models/user.model');
 const logger = require('../../config/logger');
 
-const TWITTER_API_KEY = process.env.TWITTER_API_KEY;
-const TWITTER_API_SECRET = process.env.TWITTER_API_SECRET;
+const TWITTER_CLIENT_ID = process.env.TWITTER_CLIENT_ID;
+const TWITTER_CLIENT_SECRET = process.env.TWITTER_CLIENT_SECRET;
 
 // Validate required environment variables
-if (!TWITTER_API_KEY || !TWITTER_API_SECRET) {
-  logger.error('Twitter API credentials not configured');
-  throw new Error('Twitter API credentials missing');
+if (!TWITTER_CLIENT_ID || !TWITTER_CLIENT_SECRET) {
+  logger.error('Twitter OAuth 2.0 credentials not configured');
+  throw new Error('Twitter OAuth 2.0 credentials missing');
 }
-
-const twitterOAuth = new OAuth({
-  consumer: { key: TWITTER_API_KEY, secret: TWITTER_API_SECRET },
-  signature_method: 'HMAC-SHA1',
-  hash_function(base_string, key) {
-    return crypto.createHmac('sha1', key).update(base_string).digest('base64');
-  }
-});
 
 const TWITTER_API_BASE = 'https://api.twitter.com/2';
 
@@ -31,11 +21,11 @@ class TwitterService {
         throw new Error('User not found');
       }
       
-      if (!user.socialAccounts?.twitter?.accessToken || !user.socialAccounts?.twitter?.accessTokenSecret) {
+      if (!user.socialAccounts?.twitter?.accessToken) {
         throw new Error('Twitter account not connected or credentials missing');
       }
+      
       console.log("user.socialAccounts.twitter.accessToken", user.socialAccounts.twitter.accessToken);
-      console.log("user.socialAccounts.twitter.accessTokenSecret", user.socialAccounts.twitter.accessTokenSecret);
       
       return user.socialAccounts.twitter;
     } catch (error) {
@@ -44,30 +34,70 @@ class TwitterService {
     }
   }
 
-  getAuthHeader(url, method, userCreds, data = {}) {
+  async refreshAccessToken(userId) {
     try {
-      const token = {
-        key: userCreds.accessToken,
-        secret: userCreds.accessTokenSecret
-      };
+      const user = await User.findById(userId);
+      if (!user?.socialAccounts?.twitter?.refreshToken) {
+        throw new Error('No refresh token available');
+      }
+
+      const response = await axios.post('https://api.twitter.com/2/oauth2/token', {
+        refresh_token: user.socialAccounts.twitter.refreshToken,
+        grant_type: 'refresh_token',
+        client_id: TWITTER_CLIENT_ID,
+      }, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${Buffer.from(`${TWITTER_CLIENT_ID}:${TWITTER_CLIENT_SECRET}`).toString('base64')}`
+        }
+      });
+
+      const { access_token, refresh_token, expires_in } = response.data;
       
-      // For OAuth 1.0a, we need to include data in the signature for POST requests
-      const requestData = method === 'POST' ? data : {};
-      
-      return twitterOAuth.toHeader(
-        twitterOAuth.authorize({ url, method, data: requestData }, token)
-      );
+      // Update user's tokens
+      await User.findByIdAndUpdate(userId, {
+        'socialAccounts.twitter.accessToken': access_token,
+        'socialAccounts.twitter.refreshToken': refresh_token,
+        'socialAccounts.twitter.expiresAt': new Date(Date.now() + expires_in * 1000)
+      });
+
+      return access_token;
     } catch (error) {
-      logger.error('Error generating auth header:', error);
-      throw new Error('Authentication failed');
+      logger.error('Error refreshing access token:', error);
+      throw new Error('Failed to refresh access token');
     }
+  }
+
+  async getValidAccessToken(userId) {
+    try {
+      const credentials = await this.getUserCredentials(userId);
+      
+      // Check if token is expired (if expiresAt is stored)
+      if (credentials.expiresAt && new Date() >= new Date(credentials.expiresAt)) {
+        logger.info('Access token expired, refreshing...');
+        return await this.refreshAccessToken(userId);
+      }
+      
+      return credentials.accessToken;
+    } catch (error) {
+      // If refresh fails, try to refresh anyway
+      if (error.message.includes('expired') || error.message.includes('invalid_token')) {
+        return await this.refreshAccessToken(userId);
+      }
+      throw error;
+    }
+  }
+
+  getAuthHeader(accessToken) {
+    return {
+      'Authorization': `Bearer ${accessToken}`
+    };
   }
 
   async createPost(schedule) {
     try {
-      const credentials = await this.getUserCredentials(schedule.user);
+      const accessToken = await this.getValidAccessToken(schedule.user);
       const url = `${TWITTER_API_BASE}/tweets`;
-      const method = 'POST';
       
       // Validate content
       if (!schedule.content?.text) {
@@ -82,7 +112,7 @@ class TwitterService {
       }
       
       const headers = {
-        ...this.getAuthHeader(url, method, credentials, data),
+        ...this.getAuthHeader(accessToken),
         'Content-Type': 'application/json'
       };
       
@@ -112,16 +142,15 @@ class TwitterService {
 
   async likePost(postId, userId) {
     try {
-      const credentials = await this.getUserCredentials(userId);
+      const accessToken = await this.getValidAccessToken(userId);
       
       // Get user id from Twitter API
-      const userInfo = await this.getTwitterUser(credentials);
+      const userInfo = await this.getTwitterUser(accessToken);
       const url = `${TWITTER_API_BASE}/users/${userInfo.id}/likes`;
-      const method = 'POST';
       const data = { tweet_id: postId };
       
       const headers = {
-        ...this.getAuthHeader(url, method, credentials, data),
+        ...this.getAuthHeader(accessToken),
         'Content-Type': 'application/json'
       };
       
@@ -149,9 +178,8 @@ class TwitterService {
         throw new Error('Comment exceeds 280 character limit');
       }
       
-      const credentials = await this.getUserCredentials(userId);
+      const accessToken = await this.getValidAccessToken(userId);
       const url = `${TWITTER_API_BASE}/tweets`;
-      const method = 'POST';
       
       const data = {
         text: comment.trim(),
@@ -159,7 +187,7 @@ class TwitterService {
       };
       
       const headers = {
-        ...this.getAuthHeader(url, method, credentials, data),
+        ...this.getAuthHeader(accessToken),
         'Content-Type': 'application/json'
       };
       
@@ -180,15 +208,14 @@ class TwitterService {
 
   async followUser(targetUserId, userId) {
     try {
-      const credentials = await this.getUserCredentials(userId);
-      const userInfo = await this.getTwitterUser(credentials);
+      const accessToken = await this.getValidAccessToken(userId);
+      const userInfo = await this.getTwitterUser(accessToken);
       
       const url = `${TWITTER_API_BASE}/users/${userInfo.id}/following`;
-      const method = 'POST';
       const data = { target_user_id: targetUserId };
       
       const headers = {
-        ...this.getAuthHeader(url, method, credentials, data),
+        ...this.getAuthHeader(accessToken),
         'Content-Type': 'application/json'
       };
       
@@ -208,15 +235,14 @@ class TwitterService {
 
   async retweetPost(postId, userId) {
     try {
-      const credentials = await this.getUserCredentials(userId);
-      const userInfo = await this.getTwitterUser(credentials);
+      const accessToken = await this.getValidAccessToken(userId);
+      const userInfo = await this.getTwitterUser(accessToken);
       
       const url = `${TWITTER_API_BASE}/users/${userInfo.id}/retweets`;
-      const method = 'POST';
       const data = { tweet_id: postId };
       
       const headers = {
-        ...this.getAuthHeader(url, method, credentials, data),
+        ...this.getAuthHeader(accessToken),
         'Content-Type': 'application/json'
       };
       
@@ -236,7 +262,7 @@ class TwitterService {
 
   async searchByHashtag(hashtag, userId, limit = 10) {
     try {
-      const credentials = await this.getUserCredentials(userId);
+      const accessToken = await this.getValidAccessToken(userId);
       
       // Validate hashtag
       if (!hashtag || hashtag.trim().length === 0) {
@@ -251,10 +277,9 @@ class TwitterService {
       const maxResults = Math.min(Math.max(limit, 1), 100); // Twitter API limit
       
       const url = `${TWITTER_API_BASE}/tweets/search/recent?query=${query}&max_results=${maxResults}&tweet.fields=created_at,author_id`;
-      const method = 'GET';
       
       const headers = {
-        ...this.getAuthHeader(url, method, credentials),
+        ...this.getAuthHeader(accessToken),
         'Content-Type': 'application/json'
       };
       
@@ -280,7 +305,7 @@ class TwitterService {
 
   async searchByKeyword(keyword, userId, limit = 10) {
     try {
-      const credentials = await this.getUserCredentials(userId);
+      const accessToken = await this.getValidAccessToken(userId);
       
       // Validate keyword
       if (!keyword || keyword.trim().length === 0) {
@@ -291,10 +316,9 @@ class TwitterService {
       const maxResults = Math.min(Math.max(limit, 1), 100);
       
       const url = `${TWITTER_API_BASE}/tweets/search/recent?query=${query}&max_results=${maxResults}&tweet.fields=created_at,author_id`;
-      const method = 'GET';
       
       const headers = {
-        ...this.getAuthHeader(url, method, credentials),
+        ...this.getAuthHeader(accessToken),
         'Content-Type': 'application/json'
       };
       
@@ -318,13 +342,12 @@ class TwitterService {
     }
   }
 
-  async getTwitterUser(credentials) {
+  async getTwitterUser(accessToken) {
     try {
       const url = 'https://api.twitter.com/2/users/me';
-      const method = 'GET';
       
       const headers = {
-        ...this.getAuthHeader(url, method, credentials),
+        ...this.getAuthHeader(accessToken),
         'Content-Type': 'application/json'
       };
       
@@ -389,8 +412,8 @@ class TwitterService {
   // Health check method
   async healthCheck(userId) {
     try {
-      const credentials = await this.getUserCredentials(userId);
-      await this.getTwitterUser(credentials);
+      const accessToken = await this.getValidAccessToken(userId);
+      await this.getTwitterUser(accessToken);
       return { status: 'healthy', service: 'twitter' };
     } catch (error) {
       logger.error('Twitter health check failed:', error);
@@ -398,20 +421,30 @@ class TwitterService {
     }
   }
 
-  // Get rate limit status
+  // Get rate limit status (Note: This endpoint may not be available in OAuth 2.0)
   async getRateLimitStatus(userId) {
     try {
-      const credentials = await this.getUserCredentials(userId);
-      const url = 'https://api.twitter.com/1.1/application/rate_limit_status.json';
-      const method = 'GET';
+      const accessToken = await this.getValidAccessToken(userId);
+      
+      // Note: Rate limit status endpoint might not be available with OAuth 2.0
+      // You might need to use a different approach or endpoint
+      const url = 'https://api.twitter.com/2/users/me';
       
       const headers = {
-        ...this.getAuthHeader(url, method, credentials),
+        ...this.getAuthHeader(accessToken),
         'Content-Type': 'application/json'
       };
       
       const response = await axios.get(url, { headers });
-      return response.data;
+      
+      // Extract rate limit info from response headers
+      const rateLimitInfo = {
+        remaining: response.headers['x-rate-limit-remaining'],
+        reset: response.headers['x-rate-limit-reset'],
+        limit: response.headers['x-rate-limit-limit']
+      };
+      
+      return rateLimitInfo;
     } catch (error) {
       logger.error('Error getting rate limit status:', error);
       throw error;

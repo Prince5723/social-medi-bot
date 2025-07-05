@@ -9,7 +9,7 @@ const reportSchema = new mongoose.Schema({
   platform: {
     type: String,
     required: true,
-    enum: ['twitter', 'instagram', 'linkedin', 'all']
+    enum: ['twitter',  'linkedin', 'all']
   },
   reportType: {
     type: String,

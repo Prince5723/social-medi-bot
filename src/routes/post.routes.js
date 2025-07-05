@@ -9,7 +9,7 @@ const router = express.Router();
 // Validation schemas
 const createPostSchema = z.object({
   body: z.object({
-    platform: z.enum(['twitter', 'instagram', 'linkedin']),
+    platform: z.enum(['twitter',  'linkedin']),
     content: z.object({
       text: z.string().min(1).max(280),
       media: z.array(z.string()).optional()

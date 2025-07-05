@@ -39,12 +39,6 @@ const userSchema = new mongoose.Schema({
         media_count: Number,
       }
     },
-    instagram: {
-      accessToken: String,
-      refreshToken: String,
-      userId: String,
-      username: String
-    },
     linkedin: {
       accessToken: String,
       refreshToken: String,

@@ -99,101 +99,6 @@ const twitterCallback = async (req, res) => {
   }
 };
 
-// Initiate Instagram OAuth
-const initiateInstagramAuth = async (req, res) => {
-  try {
-    const { callbackUrl } = req.body;
-    
-    if (!callbackUrl) {
-      return res.status(400).json({
-        success: false,
-        message: 'Callback URL is required'
-      });
-    }
-
-    const authData = await SocialAuthService.getInstagramAuthUrl(callbackUrl);
-    
-    res.json({
-      success: true,
-      data: { 
-        authUrl: authData.url,
-        state: authData.state // Include state for security verification
-      }
-    });
-  } catch (error) {
-    logger.error('Instagram auth initiation error:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to initiate Instagram authentication'
-    });
-  }
-};
-
-// Instagram OAuth callback
-const instagramCallback = async (req, res) => {
-  try {
-    const { code, state } = req.query;
-    const { userId } = req.params;
-    const { callbackUrl } = req.body; // May need callback URL for token exchange
-
-    if (!code) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing authorization code'
-      });
-    }
-
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        message: 'User ID is required'
-      });
-    }
-
-    // Verify state parameter for security (implement state verification logic)
-    // In production, you should store and verify the state parameter
-
-    const tokens = await SocialAuthService.completeInstagramAuth(code, callbackUrl);
-    
-    // Check if user exists
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    // Update user's Instagram credentials
-    await User.findByIdAndUpdate(userId, {
-      'socialAccounts.instagram': {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        userId: tokens.userId,
-        username: tokens.username,
-        accountType: tokens.accountType,
-        connectedAt: new Date()
-      }
-    });
-
-    res.json({
-      success: true,
-      message: 'Instagram account connected successfully',
-      data: { 
-        username: tokens.username,
-        accountType: tokens.accountType,
-        userId: tokens.userId
-      }
-    });
-  } catch (error) {
-    logger.error('Instagram callback error:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to complete Instagram authentication'
-    });
-  }
-};
-
 // Initiate LinkedIn OAuth
 const initiateLinkedInAuth = async (req, res) => {
   try {
@@ -323,17 +228,6 @@ const getConnectedAccounts = async (req, res) => {
       connectedAccounts.twitter = { connected: false };
     }
     
-    if (user.socialAccounts?.instagram?.accessToken) {
-      connectedAccounts.instagram = {
-        username: user.socialAccounts.instagram.username,
-        accountType: user.socialAccounts.instagram.accountType,
-        connected: true,
-        connectedAt: user.socialAccounts.instagram.connectedAt
-      };
-    } else {
-      connectedAccounts.instagram = { connected: false };
-    }
-    
     if (user.socialAccounts?.linkedin?.accessToken) {
       connectedAccounts.linkedin = {
         username: user.socialAccounts.linkedin.username,
@@ -371,7 +265,7 @@ const disconnectAccount = async (req, res) => {
     }
 
     // Validate platform
-    const validPlatforms = ['twitter', 'instagram', 'linkedin'];
+    const validPlatforms = ['twitter', 'linkedin'];
     if (!validPlatforms.includes(platform)) {
       return res.status(400).json({
         success: false,
@@ -474,12 +368,6 @@ const refreshAccessToken = async (req, res) => {
         
         break;
       
-      case 'instagram':
-        return res.status(400).json({
-          success: false,
-          message: 'Instagram Basic Display API does not support refresh tokens'
-        });
-      
       case 'linkedin':
         const linkedinRefreshToken = user.socialAccounts?.linkedin?.refreshToken;
         if (!linkedinRefreshToken) {
@@ -522,8 +410,6 @@ const refreshAccessToken = async (req, res) => {
 module.exports = {
   initiateTwitterAuth,
   twitterCallback,
-  initiateInstagramAuth,
-  instagramCallback,
   initiateLinkedInAuth,
   linkedinCallback,
   getConnectedAccounts,

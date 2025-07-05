@@ -9,7 +9,7 @@ const router = express.Router();
 // Validation schemas
 const generateReportSchema = z.object({
   body: z.object({
-    platform: z.enum(['twitter', 'instagram', 'linkedin', 'all']),
+    platform: z.enum(['twitter', 'linkedin', 'all']),
     reportType: z.enum(['daily', 'weekly', 'monthly', 'custom']),
     dateRange: z.object({
       start: z.string().datetime(),
