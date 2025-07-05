@@ -2,7 +2,7 @@ const User = require('../models/user.model');
 const logger = require('../config/logger');
 const SocialAuthService = require('../services/social-auth.service');
 
-// Initiate Twitter OAuth
+// Initiate Twitter OAuth 2.0
 const initiateTwitterAuth = async (req, res) => {
   try {
     const { callbackUrl } = req.body;
@@ -14,12 +14,14 @@ const initiateTwitterAuth = async (req, res) => {
       });
     }
 
-    const authUrl = await SocialAuthService.getTwitterAuthUrl(callbackUrl);
-    console.log("authUrl", authUrl);
+    const authData = await SocialAuthService.getTwitterAuthUrl(callbackUrl);
     
     res.json({
       success: true,
-      data: { authUrl }
+      data: { 
+        authUrl: authData.url,
+        state: authData.state // Include state for security verification
+      }
     });
   } catch (error) {
     logger.error('Twitter auth initiation error:', error);
@@ -30,15 +32,15 @@ const initiateTwitterAuth = async (req, res) => {
   }
 };
 
-// Twitter OAuth callback
+// Twitter OAuth 2.0 callback
 const twitterCallback = async (req, res) => {
   try {
-    const { oauth_token, oauth_verifier, userId } = req.query;
+    const { code, state, userId } = req.query;
 
-    if (!oauth_token || !oauth_verifier) {
+    if (!code || !state) {
       return res.status(400).json({
         success: false,
-        message: 'Missing OAuth parameters (oauth_token or oauth_verifier)'
+        message: 'Missing OAuth parameters (code or state)'
       });
     }
 
@@ -49,8 +51,10 @@ const twitterCallback = async (req, res) => {
       });
     }
 
-    const tokens = await SocialAuthService.completeTwitterAuth(oauth_token, oauth_verifier);
-    console.log("tokens", tokens);
+    // Note: In production, you should verify the state parameter against stored values
+    // For now, we'll pass it through to the service
+
+    const tokens = await SocialAuthService.completeTwitterAuth(code, state, userId);
     
     // Check if user exists
     const user = await User.findById(userId);
@@ -61,13 +65,18 @@ const twitterCallback = async (req, res) => {
       });
     }
 
-    // Update user's Twitter credentials
+    // Update user's Twitter credentials (OAuth 2.0 structure)
     await User.findByIdAndUpdate(userId, {
       'socialAccounts.twitter': {
         accessToken: tokens.accessToken,
-        accessTokenSecret: tokens.accessTokenSecret,
+        refreshToken: tokens.refreshToken, // Now available in OAuth 2.0
         userId: tokens.userId,
-        username: tokens.username
+        username: tokens.username,
+        name: tokens.name,
+        profileImage: tokens.profileImage,
+        publicMetrics: tokens.publicMetrics,
+        expiresIn: tokens.expiresIn,
+        connectedAt: new Date()
       }
     });
 
@@ -77,7 +86,8 @@ const twitterCallback = async (req, res) => {
       data: { 
         username: tokens.username,
         name: tokens.name,
-        userId: tokens.userId
+        userId: tokens.userId,
+        profileImage: tokens.profileImage
       }
     });
   } catch (error) {
@@ -256,6 +266,7 @@ const linkedinCallback = async (req, res) => {
         refreshToken: tokens.refreshToken,    //not provided by linkedin-api : undefined as of now
         userId: tokens.userId,
         username: tokens.username,
+        connectedAt: new Date()
       }
     });
 
@@ -303,8 +314,10 @@ const getConnectedAccounts = async (req, res) => {
       connectedAccounts.twitter = {
         username: user.socialAccounts.twitter.username,
         name: user.socialAccounts.twitter.name,
+        profileImage: user.socialAccounts.twitter.profileImage,
         connected: true,
-        connectedAt: user.socialAccounts.twitter.connectedAt
+        connectedAt: user.socialAccounts.twitter.connectedAt,
+        hasRefreshToken: !!user.socialAccounts.twitter.refreshToken // OAuth 2.0 has refresh tokens
       };
     } else {
       connectedAccounts.twitter = { connected: false };
@@ -323,9 +336,7 @@ const getConnectedAccounts = async (req, res) => {
     
     if (user.socialAccounts?.linkedin?.accessToken) {
       connectedAccounts.linkedin = {
-        firstName: user.socialAccounts.linkedin.firstName,
-        lastName: user.socialAccounts.linkedin.lastName,
-        email: user.socialAccounts.linkedin.email,
+        username: user.socialAccounts.linkedin.username,
         connected: true,
         connectedAt: user.socialAccounts.linkedin.connectedAt
       };
@@ -390,7 +401,7 @@ const disconnectAccount = async (req, res) => {
     updateData[`socialAccounts.${platform}`] = {
       accessToken: null,
       refreshToken: null,
-      accessTokenSecret: null, // For Twitter
+      accessTokenSecret: null, // For backward compatibility
       userId: null,
       username: null,
       name: null,
@@ -399,6 +410,8 @@ const disconnectAccount = async (req, res) => {
       email: null,
       profileImage: null,
       accountType: null,
+      publicMetrics: null, // Twitter OAuth 2.0 specific
+      expiresIn: null, // Twitter OAuth 2.0 specific
       connectedAt: null
     };
 
@@ -417,7 +430,7 @@ const disconnectAccount = async (req, res) => {
   }
 };
 
-// Refresh access token (for LinkedIn)
+// Refresh access token (now supports Twitter OAuth 2.0)
 const refreshAccessToken = async (req, res) => {
   try {
     const { platform } = req.params;
@@ -442,10 +455,24 @@ const refreshAccessToken = async (req, res) => {
     
     switch (platform) {
       case 'twitter':
-        return res.status(400).json({
-          success: false,
-          message: 'Twitter OAuth 1.0a does not support refresh tokens'
+        const twitterRefreshToken = user.socialAccounts?.twitter?.refreshToken;
+        if (!twitterRefreshToken) {
+          return res.status(400).json({
+            success: false,
+            message: 'No refresh token available for Twitter'
+          });
+        }
+        
+        newTokens = await SocialAuthService.refreshTwitterToken(twitterRefreshToken);
+        
+        // Update user's Twitter credentials
+        await User.findByIdAndUpdate(req.user._id, {
+          'socialAccounts.twitter.accessToken': newTokens.accessToken,
+          'socialAccounts.twitter.refreshToken': newTokens.refreshToken,
+          'socialAccounts.twitter.expiresIn': newTokens.expiresIn
         });
+        
+        break;
       
       case 'instagram':
         return res.status(400).json({
@@ -454,15 +481,15 @@ const refreshAccessToken = async (req, res) => {
         });
       
       case 'linkedin':
-        const refreshToken = user.socialAccounts?.linkedin?.refreshToken;
-        if (!refreshToken) {
+        const linkedinRefreshToken = user.socialAccounts?.linkedin?.refreshToken;
+        if (!linkedinRefreshToken) {
           return res.status(400).json({
             success: false,
             message: 'No refresh token available for LinkedIn'
           });
         }
         
-        newTokens = await SocialAuthService.refreshLinkedInToken(refreshToken);
+        newTokens = await SocialAuthService.refreshLinkedInToken(linkedinRefreshToken);
         
         // Update user's LinkedIn credentials
         await User.findByIdAndUpdate(req.user._id, {

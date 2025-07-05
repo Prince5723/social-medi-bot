@@ -2,11 +2,25 @@ const Queue = require('bull');
 const Schedule = require('../models/schedule.model');
 const logger = require('../config/logger');
 
+// Redis connection options - works with both URL and individual params
+const redisConfig = process.env.REDIS_URL || {
+  redis: {
+    port: process.env.REDIS_PORT || 15546,
+    host: process.env.REDIS_HOST,
+    password: process.env.REDIS_PASSWORD,
+    connectTimeout: 60000,
+    lazyConnect: true,
+    retryDelayOnFailover: 100,
+    enableReadyCheck: false,
+    maxRetriesPerRequest: null,
+  },
+};
+
 // Create queues for different platforms
-const twitterQueue = new Queue('twitter-posts', process.env.REDIS_URL);
-const instagramQueue = new Queue('instagram-posts', process.env.REDIS_URL);
-const linkedinQueue = new Queue('linkedin-posts', process.env.REDIS_URL);
-const reportQueue = new Queue('report-generation', process.env.REDIS_URL);
+const twitterQueue = new Queue('twitter-posts', redisConfig);
+const instagramQueue = new Queue('instagram-posts', redisConfig);
+const linkedinQueue = new Queue('linkedin-posts', redisConfig);
+const reportQueue = new Queue('report-generation', redisConfig);
 
 // Platform queue mapping
 const platformQueues = {
@@ -18,14 +32,16 @@ const platformQueues = {
 class SchedulerService {
   constructor() {
     this.setupQueueProcessors();
+    this.setupQueueEventHandlers();
   }
 
   setupQueueProcessors() {
     // Process Twitter posts
-    twitterQueue.process(async (job) => {
+    twitterQueue.process('process-post', async (job) => {
       try {
         const { scheduleId } = job.data;
-        await this.processScheduledPost(scheduleId, 'twitter');
+        logger.info(`Processing Twitter post for schedule: ${scheduleId}`);
+        return await this.processScheduledPost(scheduleId, 'twitter');
       } catch (error) {
         logger.error('Twitter queue processing error:', error);
         throw error;
@@ -33,10 +49,11 @@ class SchedulerService {
     });
 
     // Process Instagram posts
-    instagramQueue.process(async (job) => {
+    instagramQueue.process('process-post', async (job) => {
       try {
         const { scheduleId } = job.data;
-        await this.processScheduledPost(scheduleId, 'instagram');
+        logger.info(`Processing Instagram post for schedule: ${scheduleId}`);
+        return await this.processScheduledPost(scheduleId, 'instagram');
       } catch (error) {
         logger.error('Instagram queue processing error:', error);
         throw error;
@@ -44,10 +61,11 @@ class SchedulerService {
     });
 
     // Process LinkedIn posts
-    linkedinQueue.process(async (job) => {
+    linkedinQueue.process('process-post', async (job) => {
       try {
         const { scheduleId } = job.data;
-        await this.processScheduledPost(scheduleId, 'linkedin');
+        logger.info(`Processing LinkedIn post for schedule: ${scheduleId}`);
+        return await this.processScheduledPost(scheduleId, 'linkedin');
       } catch (error) {
         logger.error('LinkedIn queue processing error:', error);
         throw error;
@@ -55,21 +73,47 @@ class SchedulerService {
     });
 
     // Process report generation
-    reportQueue.process(async (job) => {
+    reportQueue.process('generate-report', async (job) => {
       try {
         const { reportId } = job.data;
-        await this.processReportGeneration(reportId);
+        logger.info(`Processing report generation for: ${reportId}`);
+        return await this.processReportGeneration(reportId);
       } catch (error) {
         logger.error('Report queue processing error:', error);
         throw error;
       }
     });
+  }
 
-    // Handle failed jobs
-    [twitterQueue, instagramQueue, linkedinQueue].forEach(queue => {
+  setupQueueEventHandlers() {
+    // Handle queue events
+    const queues = [twitterQueue, instagramQueue, linkedinQueue, reportQueue];
+    
+    queues.forEach((queue, index) => {
+      const queueNames = ['Twitter', 'Instagram', 'LinkedIn', 'Report'];
+      const queueName = queueNames[index];
+      
+      queue.on('ready', () => {
+        logger.info(`${queueName} queue is ready`);
+      });
+
+      queue.on('error', (error) => {
+        logger.error(`${queueName} queue error:`, error);
+      });
+
       queue.on('failed', async (job, err) => {
-        logger.error(`Job ${job.id} failed:`, err);
-        await this.handleFailedJob(job.data.scheduleId, err);
+        logger.error(`${queueName} job ${job.id} failed:`, err);
+        if (job.data.scheduleId) {
+          await this.handleFailedJob(job.data.scheduleId, err);
+        }
+      });
+
+      queue.on('completed', (job) => {
+        logger.info(`${queueName} job ${job.id} completed successfully`);
+      });
+
+      queue.on('stalled', (job) => {
+        logger.warn(`${queueName} job ${job.id} stalled`);
       });
     });
   }
@@ -78,31 +122,58 @@ class SchedulerService {
     try {
       const { platform, scheduledTime, content, user } = scheduleData;
 
+      // Validate platform
+      if (!platformQueues[platform]) {
+        throw new Error(`Unsupported platform: ${platform}`);
+      }
+
       // Create schedule record
       const schedule = new Schedule({
         user: user._id,
         platform,
         content,
-        scheduledTime,
-        status: 'pending'
+        scheduledTime: new Date(scheduledTime),
+        status: 'pending',
+        retryCount: 0,
+        maxRetries: 3
       });
 
       await schedule.save();
+      logger.info("Schedule saved to database:", schedule._id);
 
       // Add to queue
       const queue = platformQueues[platform];
-      const delay = scheduledTime.getTime() - Date.now();
+      const delay = new Date(scheduledTime).getTime() - Date.now();
+      
+      logger.info(`Calculated delay: ${delay}ms`);
 
+      const jobOptions = {
+        removeOnComplete: 10, // Keep only 10 completed jobs
+        removeOnFail: 50,     // Keep 50 failed jobs for debugging
+        attempts: 3,          // Retry failed jobs 3 times
+        backoff: {
+          type: 'exponential',
+          delay: 5000,        // Start with 5 second delay
+        },
+      };
+
+      let job;
       if (delay <= 0) {
         // Post immediately if scheduled time has passed
-        await queue.add({ scheduleId: schedule._id });
+        job = await queue.add('process-post', { scheduleId: schedule._id }, jobOptions);
+        logger.info("Job added to queue immediately:", job.id);
       } else {
         // Schedule for later
-        await queue.add(
-          { scheduleId: schedule._id },
-          { delay }
-        );
+        job = await queue.add('process-post', { scheduleId: schedule._id }, {
+          ...jobOptions,
+          delay: delay
+        });
+        logger.info("Job scheduled for later:", job.id);
       }
+
+      // Store job ID in schedule for tracking
+      schedule.jobId = job.id;
+      await schedule.save();
 
       logger.info(`Post scheduled for ${platform} at ${scheduledTime}`);
       return schedule;
@@ -119,6 +190,12 @@ class SchedulerService {
         throw new Error('Schedule not found');
       }
 
+      // Check if already processed
+      if (schedule.status === 'posted') {
+        logger.info(`Schedule ${scheduleId} already processed`);
+        return { id: schedule.postId, message: 'Already processed' };
+      }
+
       // Update status to processing
       schedule.status = 'processing';
       await schedule.save();
@@ -132,6 +209,7 @@ class SchedulerService {
       // Update schedule with success
       schedule.status = 'posted';
       schedule.postId = result.id;
+      schedule.publishedAt = new Date();
       await schedule.save();
 
       logger.info(`Post successfully published to ${platform}: ${result.id}`);
@@ -140,15 +218,19 @@ class SchedulerService {
       logger.error(`Error processing scheduled post for ${platform}:`, error);
       
       // Update schedule with error
-      const schedule = await Schedule.findById(scheduleId);
-      if (schedule) {
-        schedule.status = 'failed';
-        schedule.error = {
-          message: error.message,
-          code: error.code || 'UNKNOWN',
-          timestamp: new Date()
-        };
-        await schedule.save();
+      try {
+        const schedule = await Schedule.findById(scheduleId);
+        if (schedule) {
+          schedule.status = 'failed';
+          schedule.error = {
+            message: error.message,
+            code: error.code || 'UNKNOWN',
+            timestamp: new Date()
+          };
+          await schedule.save();
+        }
+      } catch (updateError) {
+        logger.error('Error updating schedule status:', updateError);
       }
       
       throw error;
@@ -160,25 +242,19 @@ class SchedulerService {
       const schedule = await Schedule.findById(scheduleId);
       if (!schedule) return;
 
-      schedule.retryCount += 1;
+      schedule.retryCount = (schedule.retryCount || 0) + 1;
       
-      if (schedule.retryCount >= schedule.maxRetries) {
+      if (schedule.retryCount >= (schedule.maxRetries || 3)) {
         schedule.status = 'failed';
         schedule.error = {
           message: error.message,
           code: error.code || 'MAX_RETRIES_EXCEEDED',
           timestamp: new Date()
         };
+        logger.error(`Schedule ${scheduleId} failed after ${schedule.retryCount} attempts`);
       } else {
         schedule.status = 'pending';
-        // Re-queue with exponential backoff
-        const queue = platformQueues[schedule.platform];
-        const delay = Math.pow(2, schedule.retryCount) * 60000; // 1min, 2min, 4min
-        
-        await queue.add(
-          { scheduleId: schedule._id },
-          { delay }
-        );
+        logger.info(`Retrying schedule ${scheduleId}, attempt ${schedule.retryCount}`);
       }
 
       await schedule.save();
@@ -200,11 +276,17 @@ class SchedulerService {
         
         // Remove from queue if not yet processed
         const queue = platformQueues[schedule.platform];
-        const jobs = await queue.getJobs(['waiting', 'delayed']);
-        const job = jobs.find(j => j.data.scheduleId.toString() === scheduleId);
         
-        if (job) {
-          await job.remove();
+        if (schedule.jobId) {
+          try {
+            const job = await queue.getJob(schedule.jobId);
+            if (job) {
+              await job.remove();
+              logger.info(`Removed job ${schedule.jobId} from queue`);
+            }
+          } catch (jobError) {
+            logger.warn(`Could not remove job ${schedule.jobId}:`, jobError.message);
+          }
         }
       }
 
@@ -221,8 +303,13 @@ class SchedulerService {
       
       if (filters.platform) query.platform = filters.platform;
       if (filters.status) query.status = filters.status;
-      if (filters.startDate) query.scheduledTime = { $gte: filters.startDate };
-      if (filters.endDate) query.scheduledTime = { ...query.scheduledTime, $lte: filters.endDate };
+      if (filters.startDate) query.scheduledTime = { $gte: new Date(filters.startDate) };
+      if (filters.endDate) {
+        query.scheduledTime = { 
+          ...query.scheduledTime, 
+          $lte: new Date(filters.endDate) 
+        };
+      }
 
       const schedules = await Schedule.find(query)
         .sort({ scheduledTime: 1 })
@@ -237,14 +324,55 @@ class SchedulerService {
 
   // Add a job to the report queue
   async queueReportGeneration(reportId) {
-    await reportQueue.add({ reportId });
+    try {
+      const job = await reportQueue.add('generate-report', { reportId }, {
+        removeOnComplete: 5,
+        removeOnFail: 10,
+        attempts: 2,
+      });
+      logger.info(`Report generation queued: ${job.id}`);
+      return job;
+    } catch (error) {
+      logger.error('Error queueing report generation:', error);
+      throw error;
+    }
   }
 
   // Process report generation (to be implemented in report.controller.js)
   async processReportGeneration(reportId) {
     // Placeholder: actual logic will be in report.controller.js
     logger.info(`Processing report generation for reportId: ${reportId}`);
+    return { reportId, status: 'completed' };
+  }
+
+  // Graceful shutdown
+  async shutdown() {
+    logger.info('Shutting down scheduler service...');
+    await Promise.all([
+      twitterQueue.close(),
+      instagramQueue.close(),
+      linkedinQueue.close(),
+      reportQueue.close()
+    ]);
+    logger.info('Scheduler service shut down successfully');
+  }
+
+  // Health check method
+  async getQueueStats() {
+    const stats = {};
+    
+    for (const [platform, queue] of Object.entries(platformQueues)) {
+      stats[platform] = {
+        waiting: await queue.getWaiting().then(jobs => jobs.length),
+        active: await queue.getActive().then(jobs => jobs.length),
+        completed: await queue.getCompleted().then(jobs => jobs.length),
+        failed: await queue.getFailed().then(jobs => jobs.length),
+        delayed: await queue.getDelayed().then(jobs => jobs.length),
+      };
+    }
+    
+    return stats;
   }
 }
 
-module.exports = new SchedulerService(); 
+module.exports = new SchedulerService();

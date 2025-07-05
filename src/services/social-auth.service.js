@@ -1,24 +1,15 @@
 const axios = require('axios');
-const OAuth = require('oauth-1.0a');
 const crypto = require('crypto');
 const logger = require('../config/logger');
 
 class SocialAuthService {
   constructor() {
-    // Twitter OAuth 1.0a
-    this.twitterOAuth = new OAuth({
-      consumer: {
-        key: process.env.TWITTER_API_KEY,
-        secret: process.env.TWITTER_API_SECRET
-      },
-      signature_method: 'HMAC-SHA1',
-      hash_function(base_string, key) {
-        return crypto
-          .createHmac('sha1', key)
-          .update(base_string)
-          .digest('base64');
-      }
-    });
+    // Twitter OAuth 2.0 (PKCE)
+    this.twitterConfig = {
+      clientId: process.env.TWITTER_CLIENT_ID,
+      clientSecret: process.env.TWITTER_CLIENT_SECRET, // Optional for public clients
+      redirectUri: process.env.TWITTER_REDIRECT_URI
+    };
 
     // Instagram OAuth 2.0
     this.instagramConfig = {
@@ -34,11 +25,22 @@ class SocialAuthService {
       redirectUri: process.env.LINKEDIN_REDIRECT_URI
     };
 
-    // In-memory store for request tokens (use Redis/DB in production)
-    this.tokenStore = new Map();
+    // In-memory store for PKCE code verifiers (use Redis/DB in production)
+    this.codeVerifierStore = new Map();
   }
 
-  // Twitter OAuth 1.0a Implementation
+  // Utility function to generate PKCE code verifier and challenge
+  generatePKCE() {
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const codeChallenge = crypto
+      .createHash('sha256')
+      .update(codeVerifier)
+      .digest('base64url');
+    
+    return { codeVerifier, codeChallenge };
+  }
+
+  // Twitter OAuth 2.0 Implementation
   async getTwitterAuthUrl(callbackUrl) {
     try {
       // Validate callback URL
@@ -46,67 +48,123 @@ class SocialAuthService {
         throw new Error('Callback URL is required');
       }
 
-      const request_data = {
-        url: 'https://api.twitter.com/oauth/request_token',
-        method: 'POST',
-        data: { oauth_callback: callbackUrl }
+      // Generate PKCE parameters
+      const { codeVerifier, codeChallenge } = this.generatePKCE();
+      const state = crypto.randomBytes(16).toString('hex');
+
+      // Store code verifier for later use
+      this.codeVerifierStore.set(state, codeVerifier);
+
+      const params = new URLSearchParams({
+        response_type: 'code',
+        client_id: this.twitterConfig.clientId,
+        redirect_uri: callbackUrl,
+        scope: 'tweet.read tweet.write users.read follows.read follows.write offline.access',
+        state: state,
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256'
+      });
+
+      return {
+        url: `https://twitter.com/i/oauth2/authorize?${params.toString()}`,
+        state: state
+      };
+      
+    } catch (error) {
+      logger.error('Twitter auth URL generation error:', error);
+      throw new Error(`Failed to generate Twitter auth URL: ${error.message}`);
+    }
+  }
+
+  async completeTwitterAuth(code, state, userId) {
+    const callbackUrl = `${process.env.TWITTER_REDIRECT_URI}?userId=${userId}`;
+    try {
+      if (!code || !state) {
+        throw new Error('Authorization code and state are required');
+      }
+
+      // Retrieve the stored code verifier
+      const codeVerifier = this.codeVerifierStore.get(state);
+      if (!codeVerifier) {
+        throw new Error('Code verifier not found. State may have expired or be invalid.');
+      }
+
+      // Exchange code for access token
+      const tokenData = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: callbackUrl || this.twitterConfig.redirectUri,
+        code_verifier: codeVerifier,
+        client_id: this.twitterConfig.clientId
+      });
+
+      // Add client_secret for confidential clients (optional for public clients)
+      if (this.twitterConfig.clientSecret) {
+        tokenData.append('client_secret', this.twitterConfig.clientSecret);
+      }
+
+      const headers = {
+        'Content-Type': 'application/x-www-form-urlencoded'
       };
 
-      // Generate OAuth headers
-      const authHeader = this.twitterOAuth.toHeader(this.twitterOAuth.authorize(request_data));
-      console.log("Generated OAuth headers");
+      if (this.twitterConfig.clientSecret) {
+        const basicAuth = Buffer.from(
+          `${this.twitterConfig.clientId}:${this.twitterConfig.clientSecret}`
+        ).toString('base64');
+        headers['Authorization'] = `Basic ${basicAuth}`;
+      }
 
-      // Make the request
-      const response = await axios.post(request_data.url, null, {
+      const tokenResponse = await axios.post(
+        'https://api.twitter.com/2/oauth2/token',
+        tokenData,
+        { headers }
+      );
+
+      if (tokenResponse.status !== 200) {
+        throw new Error(`Twitter API returned status ${tokenResponse.status}`);
+      }
+
+      const { access_token, refresh_token, expires_in } = tokenResponse.data;
+
+      // Clean up stored code verifier
+      this.codeVerifierStore.delete(state);
+
+      // Get user information
+      const userResponse = await axios.get('https://api.twitter.com/2/users/me?user.fields=name,username,profile_image_url,public_metrics', {
         headers: {
-          ...authHeader,
-          'Content-Type': 'application/x-www-form-urlencoded'
+          'Authorization': `Bearer ${access_token}`
         }
       });
 
-      console.log("Response status:", response.status);
-
-      // Check if response is successful
-      if (response.status !== 200) {
-        throw new Error(`Twitter API returned status ${response.status}`);
+      if (userResponse.status !== 200) {
+        throw new Error(`Failed to fetch user data: ${userResponse.status}`);
       }
 
-      // Parse the response
-      const params = new URLSearchParams(response.data);
-      const oauth_token = params.get('oauth_token');
-      const oauth_token_secret = params.get('oauth_token_secret');
-      const oauth_callback_confirmed = params.get('oauth_callback_confirmed');
+      const userData = userResponse.data.data;
 
-      // Validate required parameters
-      if (!oauth_token) {
-        throw new Error('oauth_token not found in response');
-      }
-
-      if (!oauth_token_secret) {
-        throw new Error('oauth_token_secret not found in response');
-      }
-
-      if (oauth_callback_confirmed !== 'true') {
-        throw new Error('OAuth callback not confirmed by Twitter');
-      }
-
-      // Store the oauth_token_secret for later use
-      this.tokenStore.set(oauth_token, oauth_token_secret);
-
-      return `https://api.twitter.com/oauth/authorize?oauth_token=${oauth_token}`;
-      
+      return {
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        expiresIn: expires_in,
+        userId: userData.id,
+        username: userData.username,
+        name: userData.name,
+        profileImage: userData.profile_image_url,
+        publicMetrics: userData.public_metrics
+      };
     } catch (error) {
-      // Enhanced error logging
       if (error.response) {
-        console.error('Twitter API Error Response:', {
+        console.error('Twitter auth completion error:', {
           status: error.response.status,
           statusText: error.response.statusText,
           data: error.response.data
         });
         
         // Handle specific Twitter API errors
-        if (error.response.status === 401) {
-          throw new Error('Twitter OAuth authentication failed. Check your API keys and signatures.');
+        if (error.response.status === 400) {
+          throw new Error('Invalid request parameters. Check your authorization code or PKCE parameters.');
+        } else if (error.response.status === 401) {
+          throw new Error('Twitter OAuth authentication failed. Check your client credentials.');
         } else if (error.response.status === 403) {
           throw new Error('Twitter API access forbidden. Check your app permissions.');
         } else if (error.response.status === 429) {
@@ -119,97 +177,6 @@ class SocialAuthService {
         console.error('Error setting up Twitter API request:', error.message);
       }
       
-      logger.error('Twitter auth URL generation error:', error);
-      throw new Error(`Failed to generate Twitter auth URL: ${error.message}`);
-    }
-  }
-
-  async completeTwitterAuth(oauth_token, oauth_verifier) {
-    try {
-      if (!oauth_token || !oauth_verifier) {
-        throw new Error('oauth_token and oauth_verifier are required');
-      }
-
-      // Retrieve the stored token secret
-      const oauth_token_secret = this.tokenStore.get(oauth_token);
-      if (!oauth_token_secret) {
-        throw new Error('oauth_token_secret not found. Token may have expired.');
-      }
-
-      const request_data = {
-        url: 'https://api.twitter.com/oauth/access_token',
-        method: 'POST',
-        data: { oauth_token, oauth_verifier }
-      };
-
-      // Create OAuth with the request token
-      const token = {
-        key: oauth_token,
-        secret: oauth_token_secret
-      };
-
-      const headers = this.twitterOAuth.toHeader(this.twitterOAuth.authorize(request_data, token));
-
-      const response = await axios.post(request_data.url, null, {
-        headers: {
-          ...headers,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      });
-
-      if (response.status !== 200) {
-        throw new Error(`Twitter API returned status ${response.status}`);
-      }
-
-      const params = new URLSearchParams(response.data);
-      const access_token = params.get('oauth_token');
-      const access_token_secret = params.get('oauth_token_secret');
-      const user_id = params.get('user_id');
-      const screen_name = params.get('screen_name');
-
-      // Clean up stored token
-      this.tokenStore.delete(oauth_token);
-
-      // Get additional user info using Twitter API v2
-      let userDetails = { username: screen_name };
-      try {
-        const userToken = { key: access_token, secret: access_token_secret };
-        const userRequest = {
-          url: `https://api.twitter.com/2/users/${user_id}?user.fields=name,username,profile_image_url`,
-          method: 'GET'
-        };
-
-        const userHeaders = this.twitterOAuth.toHeader(this.twitterOAuth.authorize(userRequest, userToken));
-        const userResponse = await axios.get(userRequest.url, {
-          headers: userHeaders
-        });
-
-        if (userResponse.status === 200 && userResponse.data.data) {
-          userDetails = {
-            username: userResponse.data.data.username,
-            name: userResponse.data.data.name,
-            profileImage: userResponse.data.data.profile_image_url
-          };
-        }
-      } catch (userError) {
-        console.warn('Failed to fetch additional user details:', userError.message);
-      }
-
-      return {
-        accessToken: access_token,
-        accessTokenSecret: access_token_secret,
-        userId: user_id,
-        username: userDetails.username,
-        name: userDetails.name,
-        profileImage: userDetails.profileImage
-      };
-    } catch (error) {
-      if (error.response) {
-        console.error('Twitter auth completion error:', {
-          status: error.response.status,
-          data: error.response.data
-        });
-      }
       logger.error('Twitter auth completion error:', error);
       throw new Error(`Failed to complete Twitter authentication: ${error.message}`);
     }
@@ -324,11 +291,6 @@ class SocialAuthService {
       if (!code) {
         throw new Error('Authorization code is required');
       }
-      // console.log("code", code);
-      // console.log("callbackUrl", callbackUrl);
-      // console.log("this.linkedinConfig.clientId", this.linkedinConfig.clientId);
-      // console.log("this.linkedinConfig.clientSecret", this.linkedinConfig.clientSecret);
-      // console.log("this.linkedinConfig.redirectUri", this.linkedinConfig.redirectUri);
   
       // Exchange code for access token
       const tokenData = new URLSearchParams({
@@ -344,7 +306,6 @@ class SocialAuthService {
           'Content-Type': 'application/x-www-form-urlencoded'
         }
       });
-      // console.log("tokenResponse", tokenResponse);
   
       if (tokenResponse.status !== 200) {
         throw new Error(`LinkedIn API returned status ${tokenResponse.status}`);
@@ -352,7 +313,7 @@ class SocialAuthService {
   
       const { access_token, refresh_token } = tokenResponse.data;
   
-      // Get user profile info - FIXED: Added required header
+      // Get user profile info
       const userResponse = await axios.get('https://api.linkedin.com/v2/userinfo', {
         headers: {
           'Authorization': `Bearer ${access_token}`,
@@ -362,7 +323,6 @@ class SocialAuthService {
   
       // Extract user data from userinfo endpoint
       const userData = userResponse.data;
-      // console.log("userData", userData);
   
       return {
         accessToken: access_token,
@@ -385,8 +345,47 @@ class SocialAuthService {
 
   // Refresh token methods
   async refreshTwitterToken(refreshToken) {
-    // Twitter OAuth 1.0a doesn't have refresh tokens
-    throw new Error('Twitter OAuth 1.0a does not support refresh tokens');
+    try {
+      if (!refreshToken) {
+        throw new Error('Refresh token is required');
+      }
+
+      const tokenData = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: this.twitterConfig.clientId
+      });
+
+      // Add client_secret for confidential clients
+      if (this.twitterConfig.clientSecret) {
+        tokenData.append('client_secret', this.twitterConfig.clientSecret);
+      }
+
+      const response = await axios.post('https://api.twitter.com/2/oauth2/token', tokenData, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+
+      if (response.status !== 200) {
+        throw new Error(`Twitter API returned status ${response.status}`);
+      }
+
+      return {
+        accessToken: response.data.access_token,
+        refreshToken: response.data.refresh_token || refreshToken,
+        expiresIn: response.data.expires_in
+      };
+    } catch (error) {
+      if (error.response) {
+        console.error('Twitter token refresh error:', {
+          status: error.response.status,
+          data: error.response.data
+        });
+      }
+      logger.error('Twitter token refresh error:', error);
+      throw new Error(`Failed to refresh Twitter token: ${error.message}`);
+    }
   }
 
   async refreshInstagramToken(refreshToken) {
@@ -435,8 +434,7 @@ class SocialAuthService {
 
   // Utility method to clean up expired tokens
   cleanupExpiredTokens() {
-    // In production, you'd want to implement proper token cleanup with TTL
-    // For now, this is a placeholder
+    // Clean up expired code verifiers (you'd implement TTL logic here)
     console.log('Token cleanup would be implemented here');
   }
 }

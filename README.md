@@ -61,12 +61,12 @@ A production-ready Node.js backend for social media automation with scheduled po
    # Instagram API (OAuth 2.0)
    INSTAGRAM_CLIENT_ID=your_instagram_client_id
    INSTAGRAM_CLIENT_SECRET=your_instagram_client_secret
-   INSTAGRAM_REDIRECT_URI=http://localhost:8000/api/social-auth/instagram/callback
+   INSTAGRAM_REDIRECT_URI=https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/callback
    
    # LinkedIn API (OAuth 2.0)
    LINKEDIN_CLIENT_ID=your_linkedin_client_id
    LINKEDIN_CLIENT_SECRET=your_linkedin_client_secret
-   LINKEDIN_REDIRECT_URI=http://localhost:8000/api/social-auth/linkedin/callback
+   LINKEDIN_REDIRECT_URI=https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/linkedin/callback
    
    # Server Configuration
    PORT=8000
@@ -88,12 +88,12 @@ A production-ready Node.js backend for social media automation with scheduled po
 First, create an account and get your JWT token:
 ```bash
 # Register
-curl -X POST http://localhost:8000/api/auth/register \
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"password123","name":"John Doe"}'
 
 # Login
-curl -X POST http://localhost:8000/api/auth/login \
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"password123"}'
 ```
@@ -101,105 +101,292 @@ curl -X POST http://localhost:8000/api/auth/login \
 ### 2. Connect Twitter Account
 ```bash
 # Initiate Twitter OAuth
-curl -X POST http://localhost:8000/api/social-auth/twitter/initiate \
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/twitter/initiate \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"callbackUrl":"http://localhost:8000/api/social-auth/twitter/callback?userId=Your_user_id"}'
+  -d '{"callbackUrl":"https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/twitter/callback/YOUR_USER_ID"}'
 
-# User will be redirected to Twitter for authorization
-# After authorization, Twitter redirects back to the callback URL
+# Copy the 'authUrl' from the response and open it in your browser to authorize.
 ```
 
 ### 3. Connect Instagram Account
 ```bash
 # Initiate Instagram OAuth
-curl -X POST http://localhost:8000/api/social-auth/instagram/initiate \
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/initiate \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"callbackUrl":"http://localhost:8000/api/social-auth/instagram/callback/YOUR_USER_ID"}'
+  -d '{"callbackUrl":"https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/callback/YOUR_USER_ID"}'
 
-# User will be redirected to Instagram for authorization
+# Copy the 'authUrl' from the response and open it in your browser to authorize.
 ```
 
 ### 4. Connect LinkedIn Account
 ```bash
 # Initiate LinkedIn OAuth
-curl -X POST http://localhost:8000/api/social-auth/linkedin/initiate \
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/linkedin/initiate \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"callbackUrl":"http://localhost:8000/api/social-auth/linkedin/callback/YOUR_USER_ID"}'
+  -d '{"callbackUrl":"https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/linkedin/callback/YOUR_USER_ID"}'
 
-# User will be redirected to LinkedIn for authorization
+# Copy the 'authUrl' from the response and open it in your browser to authorize.
 ```
 
 ### 5. Check Connected Accounts
 ```bash
-# Get list of connected accounts
-curl -X GET http://localhost:8000/api/social-auth/accounts \
+curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/accounts \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
 ### 6. Disconnect Account
 ```bash
-# Disconnect a specific platform
-curl -X DELETE http://localhost:8000/api/social-auth/accounts/twitter \
+curl -X DELETE https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/accounts/twitter \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
 ## API Documentation
 
-Once the server is running, visit `http://localhost:8000/api-docs` for interactive API documentation.
+Once the server is running, visit `https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api-docs` for interactive API documentation.
 
-### Authentication Endpoints
+---
 
-- `POST /api/auth/register` - Register a new user
-- `POST /api/auth/login` - Login user
-- `GET /api/auth/profile` - Get user profile
-- `PUT /api/auth/profile` - Update user profile
+## API Endpoints
+
+### Authentication
+
+#### Register
+```bash
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123","name":"John Doe"}'
+```
+
+#### Login
+```bash
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123"}'
+```
+
+#### Get Profile
+```bash
+curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/auth/profile \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Update Profile
+```bash
+curl -X PUT https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/auth/profile \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"New Name"}'
+```
 
 ### Social Media Authentication
 
-- `POST /api/social-auth/twitter/initiate` - Start Twitter OAuth flow
-- `GET /api/social-auth/twitter/callback/:userId` - Twitter OAuth callback
-- `POST /api/social-auth/instagram/initiate` - Start Instagram OAuth flow
-- `GET /api/social-auth/instagram/callback/:userId` - Instagram OAuth callback
-- `POST /api/social-auth/linkedin/initiate` - Start LinkedIn OAuth flow
-- `GET /api/social-auth/linkedin/callback/:userId` - LinkedIn OAuth callback
-- `GET /api/social-auth/accounts` - Get connected accounts
-- `DELETE /api/social-auth/accounts/:platform` - Disconnect account
+#### Twitter
+- **Initiate:**
+  ```bash
+  curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/twitter/initiate \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"callbackUrl":"https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/twitter/callback/YOUR_USER_ID"}'
+  # Copy the 'authUrl' from the response and open it in your browser to authorize.
+  ```
+- **Callback:**
+  ```
+  GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/twitter/callback/YOUR_USER_ID?oauth_token=...&oauth_verifier=...
+  ```
+
+#### Instagram
+- **Initiate:**
+  ```bash
+  curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/initiate \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"callbackUrl":"https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/callback/YOUR_USER_ID"}'
+  # Copy the 'authUrl' from the response and open it in your browser to authorize.
+  ```
+- **Callback:**
+  ```
+  GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/instagram/callback/YOUR_USER_ID?code=...
+  ```
+
+#### LinkedIn
+- **Initiate:**
+  ```bash
+  curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/linkedin/initiate \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"callbackUrl":"https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/linkedin/callback/YOUR_USER_ID"}'
+  # Copy the 'authUrl' from the response and open it in your browser to authorize.
+  ```
+- **Callback:**
+  ```
+  GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/linkedin/callback/YOUR_USER_ID?code=...
+  ```
+
+- **Get Connected Accounts:**
+  ```bash
+  curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/accounts \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN"
+  ```
+- **Disconnect Account:**
+  ```bash
+  curl -X DELETE https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/social-auth/accounts/:platform \
+    -H "Authorization: Bearer YOUR_JWT_TOKEN"
+  ```
 
 ### Scheduled Posts
 
-- `POST /api/posts` - Create a scheduled post
-- `GET /api/posts` - Get scheduled posts
-- `GET /api/posts/:id` - Get specific scheduled post
-- `PUT /api/posts/:id` - Update scheduled post
-- `DELETE /api/posts/:id` - Cancel scheduled post
+#### Create Scheduled Post
+```bash
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/posts \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"Hello World!","platform":"twitter","scheduleTime":"2025-07-03T10:00:00Z"}'
+```
+
+#### Get Scheduled Posts
+```bash
+curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/posts \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Get Specific Scheduled Post
+```bash
+curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/posts/POST_ID \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Update Scheduled Post
+```bash
+curl -X PUT https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/posts/POST_ID \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"Updated content"}'
+```
+
+#### Cancel Scheduled Post
+```bash
+curl -X DELETE https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/posts/POST_ID \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
 
 ### User Interactions
 
-- `POST /api/interactions` - Create an interaction
-- `POST /api/interactions/:id/execute` - Execute an interaction
-- `GET /api/interactions/history` - Get interaction history
-- `GET /api/interactions/stats` - Get interaction statistics
-- `GET /api/interactions/content/:platform` - Find content for interaction
-- `PUT /api/interactions/rules` - Update interaction rules
-- `PUT /api/interactions/auto-interaction` - Toggle auto-interaction
+#### Create Interaction
+```bash
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/interactions \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"like","targetId":"SOME_ID","platform":"twitter"}'
+```
+
+#### Execute Interaction
+```bash
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/interactions/INTERACTION_ID/execute \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Get Interaction History
+```bash
+curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/interactions/history \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Get Interaction Statistics
+```bash
+curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/interactions/stats \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Find Content for Interaction
+```bash
+curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/interactions/content/twitter \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Update Interaction Rules
+```bash
+curl -X PUT https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/interactions/rules \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"rule":"new rule"}'
+```
+
+#### Toggle Auto-Interaction
+```bash
+curl -X PUT https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/interactions/auto-interaction \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":true}'
+```
 
 ### Analytics & Reports
 
-- `POST /api/reports` - Generate a new report
-- `GET /api/reports` - Get all reports
-- `GET /api/reports/:id` - Get specific report
-- `DELETE /api/reports/:id` - Delete report
+#### Generate New Report
+```bash
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/reports \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"engagement","platform":"twitter"}'
+```
+
+#### Get All Reports
+```bash
+curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/reports \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Get Specific Report
+```bash
+curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/reports/REPORT_ID \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Delete Report
+```bash
+curl -X DELETE https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/reports/REPORT_ID \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
 
 ### Trend Monitoring
 
-- `GET /api/trends` - Get trending topics
-- `GET /api/trends/:id` - Get specific trend
-- `POST /api/trends/custom` - Create custom trend
-- `PUT /api/trends/:id/status` - Update trend status
-- `DELETE /api/trends/:id` - Delete trend
+#### Get Trending Topics
+```bash
+curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/trends \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Get Specific Trend
+```bash
+curl -X GET https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/trends/TREND_ID \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### Create Custom Trend
+```bash
+curl -X POST https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/trends/custom \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Custom Trend","keywords":["keyword1","keyword2"]}'
+```
+
+#### Update Trend Status
+```bash
+curl -X PUT https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/trends/TREND_ID/status \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"active"}'
+```
+
+#### Delete Trend
+```bash
+curl -X DELETE https://95bd-2404-7c80-5c-d4b-c90e-f60b-c3a8-344.ngrok-free.app/api/trends/TREND_ID \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+---
 
 ## Project Structure
 

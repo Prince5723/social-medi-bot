@@ -26,9 +26,18 @@ const userSchema = new mongoose.Schema({
   socialAccounts: {
     twitter: {
       accessToken: String,
-      accessTokenSecret: String,
+      refreshToken: String,
+      expiresIn: Number,
       userId: String,
-      username: String
+      username: String,
+      profileImageUrl: String,
+      publicMetrics: {
+        followers_count: Number,
+        following_count: Number,
+        tweet_count: Number,
+        listed_count: Number,
+        media_count: Number,
+      }
     },
     instagram: {
       accessToken: String,
