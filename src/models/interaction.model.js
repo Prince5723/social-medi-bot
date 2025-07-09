@@ -9,7 +9,7 @@ const interactionSchema = new mongoose.Schema({
   platform: {
     type: String,
     required: true,
-    enum: ['twitter',  'linkedin']
+    enum: ['twitter', 'linkedin']
   },
   action: {
     type: String,
